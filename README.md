@@ -1,20 +1,25 @@
-### How to run
+## How to run
 
 ```
 pip install -r requirements.txt
-```
-
-Then run it:
-
-```
 export OPENAI_API_KEY=<you-openai-api-key> # you can put it to .bashrc/.zshrc
-python main.py
 ```
 
-Example: 
+#### Web UI
+```
+streamlit run main_web.py
+```
+![web_exmaple](./assets/web_example.jpg)
 
-![image](./cli_exmaple.jpg)
+#### CLI UI:
 
-### Reference
+```
+python main_cli.py
+```
+
+![cli_exmaple](./assets/cli_exmaple.jpg)
+
+### References
 
 - https://github.com/lm-sys/FastChat
+- https://docs.streamlit.io/knowledge-base/tutorials/build-conversational-apps#write-the-app

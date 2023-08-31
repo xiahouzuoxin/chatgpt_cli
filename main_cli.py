@@ -1,6 +1,7 @@
+import abc
 import argparse
-from datetime import datetime
 import openai
+from prompts import SYSTEM_PROMPT
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', required=False, type=str, default='gpt-3.5-turbo', help='openai model, default gpt-3.5-turbo')
@@ -8,15 +9,6 @@ parser.add_argument('--max_tokens', required=False, type=int, default=1024, help
 parser.add_argument('--temperature', required=False, type=float, default=0, help='temperature, default 0')
 parser.add_argument('--max_history_len', required=False, type=int, default=5, help='max history length, default 5')
 args = parser.parse_args()
-
-current_date = datetime.now().strftime('%Y-%m-%d')
-system_prompt = f'''
-You are ChatGPT, a large language model trained by OpenAI.
-Knowledge cutoff: 2021-09
-Current date: {current_date}
-'''
-
-import abc
 
 class ChatIO(abc.ABC):
     @abc.abstractmethod
@@ -53,28 +45,31 @@ class SimpleChatIO(ChatIO):
         print(" ".join(output_text[pre:]), flush=True)
         return " ".join(output_text)
 
-messaegs = [
-    {"role": "system", "content": system_prompt},
-]
+def main_cli():
+    messaegs = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+    ]
 
-chatio = SimpleChatIO()
-while True:
-    chatio.prompt_for_output(messaegs[-1]["role"])
-    chatio.batch_output(messaegs[-1]["content"])
-    try:
-        inp = chatio.prompt_for_input("user")
-    except EOFError:
-        inp = ""
-    if not inp:
-        print("exit...")
-        break
+    chatio = SimpleChatIO()
+    while True:
+        chatio.prompt_for_output(messaegs[-1]["role"])
+        chatio.batch_output(messaegs[-1]["content"])
+        try:
+            inp = chatio.prompt_for_input("user")
+        except EOFError:
+            inp = ""
+        if not inp:
+            print("exit...")
+            break
 
-    messaegs.append({"role": "user", "content": inp})
-    response = openai.ChatCompletion.create(
-                    model=args.model,
-                    messages=messaegs[-args.max_history_len:],
-                    temperature=args.temperature,
-                    max_tokens=args.max_tokens,
-                )
-    answer = response['choices'][0]['message']['content']
-    messaegs.append({"role": "system", "content": answer})
+        messaegs.append({"role": "user", "content": inp})
+        response = openai.ChatCompletion.create(
+                        model=args.model,
+                        messages=messaegs[-args.max_history_len:],
+                        temperature=args.temperature,
+                        max_tokens=args.max_tokens,
+                    )
+        answer = response['choices'][0]['message']['content']
+        messaegs.append({"role": "assistant", "content": answer})
+
+main_cli()
