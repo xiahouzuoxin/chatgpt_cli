@@ -4,7 +4,12 @@
 pip install -r requirements.txt
 ```
 
-Put OPENAI_API_KEY to `./streamlit/secrets.toml` (if not exist please create it). Replace `<you-openai-api-key>` with your own key,
+Set `OPENAI_API_KEY`
+```
+export OPENAI_API_KEY=<you-openai-api-key> # you also can put it to .bashrc/.zshrc
+```
+
+If you want to deploy streamlit app, you should put the `OPENAI_API_KEY` to the file `./streamlit/secrets.toml` like below,
 ```
 OPENAI_API_KEY = "<you-openai-api-key>"
 ```

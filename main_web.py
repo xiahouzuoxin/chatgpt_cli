@@ -1,13 +1,14 @@
+import os
 import argparse
 import openai
 from prompts import SYSTEM_PROMPT
 import streamlit as st
 
-try:
-    # Read OPENAI_API_KEY from `.streamlit/secrets.toml`
-    openai.api_key = st.secrets["OPENAI_API_KEY"]
-except:
-    print('Default loading OPENAI_API_KEY from system environment')
+if os.path.exists('.streamlit/secrets.toml') or os.path.exists('~/.streamlit/secrets.toml'):
+    if "OPENAI_API_KEY" in st.secrets:
+        # Read OPENAI_API_KEY from `.streamlit/secrets.toml`
+        openai.api_key = st.secrets["OPENAI_API_KEY"]
+        print('Loaded OPENAI_API_KEY from secrets.toml')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', required=False, type=str, default='gpt-3.5-turbo', help='openai model, default gpt-3.5-turbo')
