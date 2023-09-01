@@ -3,6 +3,12 @@ import openai
 from prompts import SYSTEM_PROMPT
 import streamlit as st
 
+try:
+    # Read OPENAI_API_KEY from `.streamlit/secrets.toml`
+    openai.api_key = st.secrets["OPENAI_API_KEY"]
+except:
+    print('Default loading OPENAI_API_KEY from system environment')
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', required=False, type=str, default='gpt-3.5-turbo', help='openai model, default gpt-3.5-turbo')
 parser.add_argument('--max_tokens', required=False, type=int, default=1024, help='max_tokens, default 1024')
@@ -12,8 +18,6 @@ args = parser.parse_args()
 
 def main_web():
     st.title("Chat With ChatGPT")
-
-    # openai.api_key = st.secrets["OPENAI_API_KEY"]
 
     if "openai_model" not in st.session_state:
         st.session_state["openai_model"] = args.model
