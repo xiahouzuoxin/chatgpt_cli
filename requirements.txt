@@ -1,6 +1,6 @@
 openai
 streamlit
-vectordb
+chromadb
 sentence-transformers
 tenacity
 docx2txt

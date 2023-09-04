@@ -1,21 +1,16 @@
 import os
 import re
 import warnings
+import hashlib
 import concurrent
 import multiprocessing
 import openai
 from tenacity import retry, wait_random_exponential, stop_after_attempt
 from tqdm import tqdm
 import mimetypes
-import dill
-
+import chromadb
 import docx2txt
 from PyPDF2 import PdfReader
-
-from docarray import BaseDoc
-from docarray.typing import NdArray
-from docarray import DocList
-from vectordb import InMemoryExactNNVectorDB, HNSWVectorDB
 
 cpu_count = multiprocessing.cpu_count()
 
@@ -40,10 +35,13 @@ class Embedding:
         if not isinstance(text, str) or not text.strip():
             raise ValueError(f"Embedding input text must be a non-empty string: {text}")
         result = self._encode(text)
+        if self.param_source == 'sentence_transformer':
+            # convert np.float to float
+            result = [v.item() for v in result]
         return result
 
-    def get_embedding(self, text: str):
-        return self.encode(text)
+    def get_embedding(self, texts: list):
+        return [self.encode(text) for text in texts]
     
     def get_embedding_parallel(self, texts: str, num_workers=cpu_count):
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -64,19 +62,14 @@ class Embedding:
         df['n_tokens'] = df[text_col].apply(lambda x: len(tokenizer.encode(x)))
         total_tokens = df['n_tokens'].sum()
         return base_price_1k * (total_tokens / 1000), total_tokens
-    
-class EmbeddingDoc(BaseDoc):
-    doc: str = None
-    text: str
-    embedding: NdArray[384] # embedding dim of emb_model: sentence_transformer/all-MiniLM-L6-v2
 
 class VectorRetrieval():
-    def __init__(self, workspace='./knowledge_db/') -> None:
+    def __init__(self, workspace) -> None:
         if not os.path.exists(workspace):
             os.mkdir(workspace)
-        
-        # Specify your workspace path
-        self.db = InMemoryExactNNVectorDB[EmbeddingDoc](workspace=workspace)
+
+        self.chroma_client = chromadb.PersistentClient(path=workspace)
+        self.collection = self.chroma_client.get_or_create_collection(name='knowledge_base')
 
         # embedding model
         # Reference: https://www.sbert.net/docs/pretrained_models.html
@@ -89,38 +82,33 @@ class VectorRetrieval():
         self.emb_model = Embedding(source=self.emb_model_config['source'], model=self.emb_model_config['model'])
 
     def add_index_for_texts(self, texts: list, num_workers=cpu_count):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-            doc_list = list(
-                tqdm(
-                    executor.map(
-                        lambda _text: EmbeddingDoc(
-                            text=_text, 
-                            embedding=self.emb_model.get_embedding(_text)
-                        ), 
-                        texts
-                    ), 
-                    total=len(texts)
-                )
-            )
-        # doc_list = [EmbeddingDoc(
-        #         text=_text, 
-        #         embedding=self.emb_model.get_embedding(_text)
-        #     ) for _text in texts]
+        texts = list(set(texts))
+        num_workers = min(num_workers, len(texts))
+        text_embs = self.emb_model.get_embedding_parallel(texts, num_workers=num_workers)
+        ids = [hashlib.sha1(_text.encode("utf-8")).hexdigest() for _text in texts]
+        self.collection.add(documents=texts, embeddings=text_embs, ids=ids)
 
-        self.db.index(inputs=DocList[EmbeddingDoc](doc_list))
-
-    def add_index_for_docs(self, files: list, num_workers=5):
+    def add_index_for_docs(self, path: str, num_workers=5):
+        docs = []
+        for root, dirs, files in os.walk(path):
+            for file in files:
+                docs.append( os.path.join(root, file) )
+        if len(docs) == 0:
+            return 0
+        num_workers = min(num_workers, len(docs))
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
             results = list(
                 tqdm(
                     executor.map(
-                        lambda file: self.extract_chunk_texts_from_file(file), 
-                        files
+                        lambda doc: self.extract_chunk_texts_from_file(doc), 
+                        docs
                     ), 
-                    total=len(files)
+                    total=len(docs)
                 )
             )
-        self.add_index_for_texts([text for texts in results for text in texts])
+        texts = [_text for _texts in results for _text in _texts]
+        self.add_index_for_texts()
+        return len(texts)
 
     # Extract text from a file based on its mimetype
     def extract_chunk_texts_from_file(self, file):
@@ -153,61 +141,26 @@ class VectorRetrieval():
         texts = re.split('\.|\n', text.replace("  ", " "))
         text_chunks = []
         for _text in texts:
+            _text = _text.strip(' ').strip(',')
+            if len(_text) <= 5:
+                continue
             if len(_text) > max_seq_len:
                 k = 0
                 while k < len(_text):
                     # TODO: find , or space to chunk
                     text_chunks.append(_text[k:min(k+max_seq_len, len(_text))])
                     k += int(max_seq_len * overlap)
-            elif len(_text.strip(',').strip(' ')) > 5: # ignore short text
+            else:
                 text_chunks.append(_text)
         return text_chunks
-
-    def query_local(self, text, limit=10):
-        # Perform a search query
-        query = EmbeddingDoc(
-                text=text, 
-                embedding=self.emb_model.get_embedding(text)
-            )
-        results = self.db.search(inputs=DocList[EmbeddingDoc]([query]), limit=limit)
-        return [_rt.matches for _rt in results]
-
-    def serve(self):
-        # Serve the DB
-        # How to search from Client?
-        # ```
-        #   from vectordb import Client
-        #   # Instantiate a client connected to the server. In practice, replace 0.0.0.0 to the server IP address.
-        #   client = Client[ToyDoc](address='grpc://0.0.0.0:12345')
-        #   # Perform a search query
-        #   results = client.search(inputs=DocList[ToyDoc]([query]), limit=10)
-        # ```
-
-        with self.db.serve(protocol='grpc', port=12345, replicas=1, shards=1) as service:
-            service.block()
-
-    def query_served(self, text, limit=10, address='grpc://0.0.0.0:12345'):
-        from vectordb import Client
-        client = Client[EmbeddingDoc](address=address)
-        # Perform a search query
-        query = EmbeddingDoc(
-                text=text, 
-                embedding=self.emb_model.get_embedding(text)
-            )
-        results = client.search(inputs=DocList[EmbeddingDoc]([query]), limit=limit)
-        return [_rt.matches for _rt in results]
-
-def get_knowledge_base(source_dir='./knowledge/docs'):
-    vector_retrieval = VectorRetrieval('./knowledge/vector_db/')
-
-    docs = []
-    for root, dirs, files in os.walk(source_dir):
-        for file in files:
-            docs.append( os.path.join(root, file) )
-    vector_retrieval.add_index_for_docs(docs)
-    print('Generate knowledge base down.')
     
-    return vector_retrieval
+    def query(self, texts: str, limit=3):
+        query_embs = self.emb_model.get_embedding_parallel(texts, num_workers=min(len(texts), cpu_count))
+        return self.collection.query(query_embeddings=query_embs, n_results=limit)
 
 if __name__ == '__main__':
-    get_knowledge_base()
+    vector_retrieval = VectorRetrieval('./knowledge/vector_db/')
+    vector_retrieval.add_index_for_docs(path='./knowledge/docs')
+    print('Generate knowledge base down.')
+    
+    print( vector_retrieval.query(['How are you'], limit=1) )

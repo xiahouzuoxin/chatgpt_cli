@@ -14,6 +14,14 @@ If you want to deploy streamlit app, you should put the `OPENAI_API_KEY` to the 
 OPENAI_API_KEY = "<you-openai-api-key>"
 ```
 
+### Knowledge (Optional)
+
+If want add some knowledge to GPT, please put knowledge files to `./knowledge/docs` dir. Support file formats:
+
+- text/plain
+- pdf
+- office 
+
 ### Web UI
 ```
 streamlit run main_web.py

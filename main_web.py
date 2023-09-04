@@ -3,8 +3,8 @@ import argparse
 import openai
 import streamlit as st
 
-from prompts import SYSTEM_PROMPT, KNOWLEDGE_PROMPT
-from knowledge_base import get_knowledge_base
+from prompts import SYSTEM_PROMPT, construct_user_prompt
+from knowledge_base import VectorRetrieval
 
 if os.path.exists('.streamlit/secrets.toml') or os.path.exists('~/.streamlit/secrets.toml'):
     if "OPENAI_API_KEY" in st.secrets:
@@ -17,6 +17,7 @@ parser.add_argument('--model', required=False, type=str, default='gpt-3.5-turbo'
 parser.add_argument('--max_tokens', required=False, type=int, default=1024, help='max_tokens, default 1024')
 parser.add_argument('--temperature', required=False, type=float, default=0, help='temperature, default 0')
 parser.add_argument('--max_history_len', required=False, type=int, default=5, help='max history length, default 5')
+parser.add_argument('--knowledge_dir', required=False, type=str, default='./knowledge/docs', help='directory of knowledge files, default ./knowledge/docs')
 args = parser.parse_args()
 
 def main_web():
@@ -24,6 +25,15 @@ def main_web():
 
     if "openai_model" not in st.session_state:
         st.session_state["openai_model"] = args.model
+
+    if "vector_retrieval" not in st.session_state:
+        st.session_state["vector_retrieval"] = VectorRetrieval('./knowledge/vector_db/')
+        n_texts = st.session_state["vector_retrieval"].add_index_for_docs(path=args.knowledge_dir)
+        if n_texts == 0:
+            st.session_state["vector_retrieval"] = None
+            print('No knowledge files specified.')
+        else:
+            print('Generate knowledge base success.')
 
     if "messages" not in st.session_state:
         st.session_state['messages'] = []
@@ -45,8 +55,10 @@ def main_web():
             for response in openai.ChatCompletion.create(
                 model=st.session_state["openai_model"],
                 messages=[
-                    {"role": m["role"], "content": m["content"]}
-                    for m in st.session_state['messages'][-args.max_history_len:]
+                    {
+                        "role": m["role"], 
+                        "content": construct_user_prompt(m["content"], st.session_state["vector_retrieval"])
+                    } for m in st.session_state['messages'][-args.max_history_len:]
                 ],
                 temperature=args.temperature,
                 max_tokens=args.max_tokens,
