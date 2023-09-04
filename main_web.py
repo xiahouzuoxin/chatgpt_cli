@@ -1,8 +1,10 @@
 import os
 import argparse
 import openai
-from prompts import SYSTEM_PROMPT
 import streamlit as st
+
+from prompts import SYSTEM_PROMPT, KNOWLEDGE_PROMPT
+from knowledge_base import get_knowledge_base
 
 if os.path.exists('.streamlit/secrets.toml') or os.path.exists('~/.streamlit/secrets.toml'):
     if "OPENAI_API_KEY" in st.secrets:

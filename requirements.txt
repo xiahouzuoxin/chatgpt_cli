@@ -1,2 +1,7 @@
 openai
 streamlit
+vectordb
+sentence-transformers
+tenacity
+docx2txt
+PyPDF2
