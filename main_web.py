@@ -27,13 +27,17 @@ def main_web():
         st.session_state["openai_model"] = args.model
 
     if "vector_retrieval" not in st.session_state:
-        st.session_state["vector_retrieval"] = VectorRetrieval('./knowledge/vector_db/')
-        n_texts = st.session_state["vector_retrieval"].add_index_for_docs(path=args.knowledge_dir)
-        if n_texts == 0:
+        if args.knowledge_dir is not None and os.path.exists(args.knowledge_dir):
             st.session_state["vector_retrieval"] = None
-            print('No knowledge files specified.')
+            print('Specified knowledge path not exist.')
         else:
-            print('Generate knowledge base success.')
+            st.session_state["vector_retrieval"] = VectorRetrieval('./knowledge/vector_db/')
+            n_texts = st.session_state["vector_retrieval"].add_index_for_docs(path=args.knowledge_dir)
+            if n_texts == 0:
+                st.session_state["vector_retrieval"] = None
+                print('No knowledge files specified.')
+            else:
+                print('Generate knowledge base success.')
 
     if "messages" not in st.session_state:
         st.session_state['messages'] = []
