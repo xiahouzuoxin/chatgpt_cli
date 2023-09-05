@@ -17,7 +17,7 @@ def construct_user_prompt(prompt, vector_retrieval=None):
     if vector_retrieval is None:
         return prompt
     
-    knowledge = vector_retrieval.query([prompt], limit=10)
+    knowledge = vector_retrieval.query([prompt], limit=2)
     knowledge_prompt = KNOWLEDGE_PROMPT.replace('<<KNOWLEDGE>>', '\n- '.join(knowledge['documents'][0]))
     final_prompt = f'''Question: {prompt}?\n{knowledge_prompt}'''
     # print(final_prompt)
